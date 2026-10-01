@@ -819,9 +819,9 @@ import SwiftUI
     override func showAttachmentButton() {
         super.showAttachmentButton()
 
-        // No sharing options in federation v1 (or thread view until implemented). When hiding the button it is
-        // still respected in the layout constraints, so we need to remove the image to remove the button for now
-        if room.isFederated {
+        // Hiding the button still reserves its layout space, so the image is removed to
+        // take it out of the input bar.
+        if !room.canUploadFilesFromDevice {
             self.setInputbarImage(nil, for: self.leftButton)
         }
     }

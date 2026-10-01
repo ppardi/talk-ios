@@ -194,13 +194,39 @@ extension Array where Element == NCRoom {
     }
 
     public var supportsConversationSubfolders: Bool {
-        if self.isFederated {
-            return false
-        }
-
         guard let capabilities = NCDatabaseManager.sharedInstance().serverCapabilities(forAccountId: accountId) else { return false }
 
+        // conversation-subfolders is in the server's LOCAL_CONFIGS, so the local value is
+        // the correct one for a federated conversation too. ChatFileUploader throws
+        // destinationUnavailable if the folder cannot be prepared, so there is no silent
+        // fallback to a flat (unshared) upload.
         return capabilities.conversationSubfoldersEnabled
+    }
+
+    /// Resolves a `FEATURES` capability on both sides separately, because the gate needs
+    /// each value rather than their conjunction. `roomHasTalkCapability` alone returns the
+    /// host's value for a federated room, which is the whole trap this avoids.
+    ///
+    /// Both call sites must use this: expressing the rule twice means a later fix to one
+    /// site silently misses the other.
+    /// `@nonobjc` because this whole extension is `@objc` and a labelled tuple has no
+    /// Objective-C representation. Nothing in the ObjC half of the app needs it.
+    @nonobjc internal func featureOnBothServers(_ capability: TalkCapability) -> (local: Bool, host: Bool) {
+        let db = NCDatabaseManager.sharedInstance()
+        return (local: db.serverHasTalkCapability(capability, forAccountId: self.accountId),
+                host: db.roomHasTalkCapability(capability, for: self))
+    }
+
+    public var canUploadFilesFromDevice: Bool {
+        let local = NCDatabaseManager.sharedInstance().serverCapabilities(forAccountId: self.accountId)
+        let both = self.featureOnBothServers(.federatedAttachmentsUpload)
+        return FederatedCapabilityGate.canUploadFiles(
+            isFederated: self.isFederated,
+            isPublicRoom: self.type == .public,
+            attachmentsAllowed: local?.attachmentsAllowed ?? false,
+            conversationSubfoldersEnabled: local?.conversationSubfoldersEnabled ?? false,
+            uploadFeatureLocal: both.local,
+            uploadFeatureHost: both.host)
     }
 
     public var supportsUpcomingEvents: Bool {

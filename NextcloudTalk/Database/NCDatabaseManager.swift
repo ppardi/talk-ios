@@ -29,6 +29,8 @@ public enum TalkCapability: String {
     case chatReferenceId = "chat-reference-id"
     case phonebookSearch = "phonebook-search"
     case chatReadStatus = "chat-read-status"
+    case federatedAttachmentsUpload = "federated-attachments-upload"
+    case federatedReadStatus = "federated-read-status"
     case readOnlyRooms = "read-only-rooms"
     case listableRooms = "listable-rooms"
     case deleteMessages = "delete-messages"
