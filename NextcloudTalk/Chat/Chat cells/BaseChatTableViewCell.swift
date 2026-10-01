@@ -269,11 +269,17 @@ class BaseChatTableViewCell: UITableViewCell, AudioPlayerViewDelegate, Reactions
         self.titleLabel.attributedText = titleLabel
 
         let shouldShowDeliveryStatus = NCDatabaseManager.sharedInstance().roomHasTalkCapability(.chatReadStatus, for: room)
-        var shouldShowReadStatus = false
-
-        if let roomCapabilities = NCDatabaseManager.sharedInstance().roomTalkCapabilities(for: room) {
-            shouldShowReadStatus = !(roomCapabilities.readStatusPrivacy)
-        }
+        // read-privacy is the viewing user's own setting and lives in LOCAL_CONFIGS, so it
+        // must come from the local server. roomTalkCapabilities(for:) would hand back the
+        // HOST's value for a federated room, letting the other side's preference decide
+        // whether we see our own read markers.
+        let localCapabilities = NCDatabaseManager.sharedInstance().serverCapabilities(forAccountId: room.accountId)
+        let readFeature = room.featureOnBothServers(.federatedReadStatus)
+        let shouldShowReadStatus = FederatedCapabilityGate.shouldShowReadStatus(
+            isFederated: room.isFederated,
+            localReadStatusPrivacy: localCapabilities?.readStatusPrivacy ?? false,
+            readFeatureLocal: readFeature.local,
+            readFeatureHost: readFeature.host)
 
         // This check is just a workaround to fix the issue with the deleted parents returned by the API.
         if let parent = message.parent, message.willShowParentMessageInThread(thread) {
