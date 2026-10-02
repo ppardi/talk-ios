@@ -696,7 +696,21 @@ public class NCSettingsController: NSObject {
                 managedAccount.deviceSignature = signature
             }
 
-            NCAPIController.sharedInstance().subscribeAccount(account, toPushServerWithCompletionBlock: { error in
+            // `account` was captured before the write above, and talkAccount(forAccountId:)
+            // returns a DETACHED copy (NCDatabaseManager.swift:234), so it still holds the
+            // empty credentials a fresh login starts with. Registering the proxy with it
+            // posts empty deviceIdentifier/deviceSignature/userPublicKey, which the proxy
+            // rejects — and the subscription only succeeds on a later launch, once the
+            // account is re-read with the values populated. Re-read it here so a FIRST
+            // login works.
+            guard let registeredAccount = NCDatabaseManager.sharedInstance().talkAccount(forAccountId: accountId) else {
+                NCLog.log("Error while subscribing: account unavailable after storing push credentials.")
+                block?(false)
+                bgTask.stopBackgroundTask()
+                return
+            }
+
+            NCAPIController.sharedInstance().subscribeAccount(registeredAccount, toPushServerWithCompletionBlock: { error in
                 guard error == nil else {
                     NCLog.log("Error while subscribing to Push Notification server. Error: \(error?.localizedDescription ?? "")")
                     NCLog.log("Push notification, public key: \(publicKey)")
