@@ -305,4 +305,68 @@ final class UnitNCChatMessageTest: TestBaseRealm {
         let parameters = (existingMessage.messageParameters as? [String: Any])?["actor"] as? [String: String]
         XCTAssertEqual(try XCTUnwrap(parameters)["name"], "bob")
     }
+
+    // MARK: - Federated attachments
+
+    /// What the chat API returns for a file the viewer owns, in a conversation hosted on another
+    /// server (captured live, 2026-10-02). Its `file` parameter arrives already resolved to a file
+    /// on the viewer's own server, which is what makes it renderable at all.
+    ///
+    /// `file()` matches only the literal type `"file"`, so a parameter of any other type yields no
+    /// attachment and the message renders as plain text with no error. That silence is what made
+    /// the server's relay bug so hard to find: the signaling relay broadcast this same message
+    /// carrying an unresolvable `federated-file` parameter, and every client that stored it showed
+    /// the caption alone (fixed in spreed 25.99.3). This pins the shape the client depends on.
+    private func federatedOwnFileMessageDict() -> [String: Any] {
+        return [
+            "id": 2458,
+            "token": "drhsvcko",
+            "actorType": "users",
+            "actorId": "paulp",
+            "actorDisplayName": "Paul Pardi",
+            "timestamp": 1790951036,
+            "message": "Do you see this image?",
+            "messageParameters": [
+                "actor": [
+                    "type": "user",
+                    "id": "paulp",
+                    "name": "Paul Pardi",
+                    "mention-id": "federated_user/paulp@https://berylave.com"
+                ],
+                "file": [
+                    "type": "file",
+                    "id": "87514",
+                    "name": "IMG_1790951024483.0688.jpg",
+                    "size": "103303",
+                    "path": "Talk/Paul and Bill-drhsvcko/Paul Pardi-paulp/IMG_1790951024483.0688.jpg",
+                    "link": "https://berylave.com/f/87514",
+                    "etag": "883d23752776323fa75a94e8e7896db2",
+                    "permissions": "27",
+                    "mimetype": "image/jpeg",
+                    "preview-available": "yes",
+                    "hide-download": "no",
+                    "width": "589",
+                    "height": "1280",
+                    "blurhash": "LFQcuF_3?b~qn}f$%M%M$%IUM{of"
+                ]
+            ],
+            "systemMessage": "",
+            "messageType": "comment",
+            "isReplyable": true,
+            "referenceId": "temp-1790951035155.1973",
+            "reactions": [],
+            "expirationTimestamp": 0,
+            "markdown": true,
+            "threadId": 2458
+        ]
+    }
+
+    func testFederatedOwnFileMessageExposesItsFileParameter() throws {
+        let message = try XCTUnwrap(NCChatMessage(dictionary: self.federatedOwnFileMessageDict(),
+                                                  andAccountId: TestBaseRealm.fakeAccountId))
+
+        let file = try XCTUnwrap(message.file(), "A message carrying one file parameter must expose it")
+        XCTAssertEqual(file.parameterId, "87514")
+        XCTAssertTrue(file.previewAvailable, "preview-available is 'yes', so a preview must be requested")
+    }
 }
