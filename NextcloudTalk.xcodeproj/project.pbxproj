@@ -533,6 +533,7 @@
 			membershipExceptions = (
 				CalendarEvent.swift,
 				"Chat cells/EmojiUtils.swift",
+				"Chat cells/MarkdownTableFormatter.swift",
 				"Chat cells/SwiftMarkdownObjCBridge.swift",
 				Mention.swift,
 				MentionSuggestion.swift,
@@ -555,6 +556,7 @@
 				CalendarEvent.swift,
 				"Chat cells/AutoCompletionTableViewCell.swift",
 				"Chat cells/EmojiUtils.swift",
+				"Chat cells/MarkdownTableFormatter.swift",
 				"Chat cells/SwiftMarkdownObjCBridge.swift",
 				"Chat upload/ChatFileUpload.swift",
 				"Chat upload/ChatFileUploadDestination.swift",
@@ -592,6 +594,7 @@
 			membershipExceptions = (
 				CalendarEvent.swift,
 				"Chat cells/EmojiUtils.swift",
+				"Chat cells/MarkdownTableFormatter.swift",
 				"Chat cells/SwiftMarkdownObjCBridge.swift",
 				Mention.swift,
 				MentionSuggestion.swift,
@@ -613,6 +616,7 @@
 			membershipExceptions = (
 				CalendarEvent.swift,
 				"Chat cells/EmojiUtils.swift",
+				"Chat cells/MarkdownTableFormatter.swift",
 				"Chat cells/SwiftMarkdownObjCBridge.swift",
 				Mention.swift,
 				MentionSuggestion.swift,

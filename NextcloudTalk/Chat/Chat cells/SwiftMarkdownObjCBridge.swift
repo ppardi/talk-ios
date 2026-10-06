@@ -41,8 +41,47 @@ import UIKit
         return markdownParser
     }()
 
+    /// How many monospaced characters fit across a message bubble.
+    ///
+    /// The parsed result is cached on the message, which has no view, so this is an estimate from
+    /// the screen rather than a measurement of the bubble: screen width less the avatar column, the
+    /// cell margins and the bubble's own padding. It is re-read on every parse, so a Dynamic Type
+    /// change is picked up. A rotation or an iPad split-view resize is not, until the message is
+    /// re-parsed — a table near the boundary may then stay in whichever form it was built as.
+    private static var maxCharactersPerLine: Int {
+        let characterWidth = ("0" as NSString)
+            .size(withAttributes: [.font: UIFont.monospacedPreferredFont(forTextStyle: .body)]).width
+
+        guard characterWidth > 0 else { return 32 }
+
+        return max(16, Int((UIScreen.main.bounds.width - 96) / characterWidth))
+    }
+
     static func parseMarkdown(markdownString: NSAttributedString) -> NSMutableAttributedString {
-        return NSMutableAttributedString(attributedString: markdownParser.parse(markdownString))
+        // CDMarkdownKit has no table element, so tables would otherwise reach the user as raw pipes.
+        // Substitute them for an aligned monospaced block first.
+        let (substituted, tableRanges) = MarkdownTableFormatter.substituting(in: markdownString,
+                                                                            maxCharactersPerLine: maxCharactersPerLine)
+
+        // The font is applied *before* parsing, not after: CDMarkdownKit strips syntax characters as
+        // it goes, so any range measured against the pre-parse string is stale by the time it
+        // returns. Attributes, unlike ranges, travel with the text. `overwriteExistingStyle` is
+        // false above, so the parser leaves this font alone.
+        for range in tableRanges {
+            substituted.addAttribute(.font,
+                                     value: UIFont.monospacedPreferredFont(forTextStyle: .body),
+                                     range: range)
+
+            // Made a real link rather than a custom hit-test: the text view already routes link taps
+            // through its delegate, which is the path room links use, and it renders the range as
+            // something that visibly invites a tap. A bespoke gesture recognizer competed with the
+            // text view's own and silently did nothing on device.
+            if let url = MarkdownTableFormatter.tapURL {
+                substituted.addAttribute(.link, value: url, range: range)
+            }
+        }
+
+        return NSMutableAttributedString(attributedString: markdownParser.parse(substituted))
     }
 
     static func getLayoutManager() -> CDMarkdownLayoutManager {

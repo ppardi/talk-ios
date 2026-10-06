@@ -179,6 +179,23 @@ class MessageBodyTextView: UITextView, UITextViewDelegate, UIGestureRecognizerDe
     // MARK: - UITextView delegate
 
     func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
+        // A table opens in the markdown viewer, which renders real columns and scrolls them
+        // horizontally. In the bubble it is at best an aligned monospaced block, and when the table
+        // is wider than the bubble it is only a stand-in.
+        if URL.scheme == MarkdownTableFormatter.tapURLScheme {
+            if let source = textView.attributedText?.attribute(MarkdownTableFormatter.tableAttribute,
+                                                               at: characterRange.location,
+                                                               effectiveRange: nil) as? String {
+                let title = NSLocalizedString("Table", comment: "Title of the viewer showing a table from a message")
+                let viewController = MarkdownViewerViewController(markdown: source, title: title)
+                let navigationController = UINavigationController(rootViewController: viewController)
+
+                NCUserInterfaceController.sharedInstance().mainViewController.present(navigationController, animated: true)
+            }
+
+            return false
+        }
+
         if NCUtils.isInstanceRoomLink(link: URL.absoluteString) {
             NCRoomsManager.shared.startChat(withRoomToken: URL.lastPathComponent)
             return false
