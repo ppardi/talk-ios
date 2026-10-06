@@ -1,0 +1,160 @@
+<!--
+SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+<style>
+:root {
+	color-scheme: light dark;
+	--fg: #1a1a1a;
+	--bg: #ffffff;
+	--muted: #6b6b6b;
+	--rule: #d8d8d8;
+	--code-bg: #f4f4f4;
+	--head-bg: #f0f0f0;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--fg: #ebebeb;
+		--bg: #1c1c1e;
+		--muted: #9a9a9a;
+		--rule: #3a3a3c;
+		--code-bg: #2c2c2e;
+		--head-bg: #2c2c2e;
+	}
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	margin: 0;
+	padding: 16px;
+	color: var(--fg);
+	background: var(--bg);
+	font: -apple-system-body;
+	font-family: -apple-system, system-ui, sans-serif;
+	line-height: 1.5;
+	word-wrap: break-word;
+}
+
+h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.2em 0 0.5em; }
+h1 { font-size: 1.6em; }
+h2 { font-size: 1.35em; }
+h3 { font-size: 1.15em; }
+h1:first-child, h2:first-child, h3:first-child { margin-top: 0; }
+
+a { color: #0082c9; }
+
+hr { border: 0; border-top: 1px solid var(--rule); margin: 1.5em 0; }
+
+blockquote {
+	margin: 1em 0;
+	padding: 0 0 0 12px;
+	border-left: 3px solid var(--rule);
+	color: var(--muted);
+}
+
+code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.9em;
+	background: var(--code-bg);
+	padding: 0.15em 0.35em;
+	border-radius: 4px;
+}
+
+pre {
+	background: var(--code-bg);
+	padding: 10px;
+	border-radius: 6px;
+	overflow-x: auto;
+}
+
+pre code { background: none; padding: 0; }
+
+img { max-width: 100%; height: auto; }
+
+/* Wide tables scroll horizontally rather than squashing, matching the web client's
+   `overflow-x: auto` on table containers. */
+.table-scroll {
+	width: 100%;
+	overflow-x: auto;
+	margin: 1em 0;
+	-webkit-overflow-scrolling: touch;
+}
+
+table { border-collapse: collapse; }
+
+th, td {
+	border: 1px solid var(--rule);
+	padding: 6px 10px;
+	text-align: left;
+	vertical-align: top;
+	white-space: nowrap;
+}
+
+th { background: var(--head-bg); font-weight: 600; }
+
+ul, ol { padding-left: 1.4em; }
+
+li { margin: 0.2em 0; }
+
+input[type="checkbox"] { margin-right: 0.4em; }
+</style>
+</head>
+<body>
+<div id="content"></div>
+<script src="marked.min.js"></script>
+<script>
+// Raw HTML in the document is neutralised rather than passed through. marked removed its
+// own sanitizer in v5, and the document comes from another user, so every html token is
+// re-escaped and emitted as visible text instead of live markup.
+function escapeHtml(text) {
+	return String(text)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+marked.use({
+	gfm: true,
+	breaks: false,
+	renderer: {
+		html(token) { return escapeHtml(token.raw !== undefined ? token.raw : token.text); },
+		// Tables get a scrolling wrapper so a wide one does not force the page sideways.
+		table(token) {
+			const header = token.header.map((cell, i) => {
+				const align = token.align[i] ? ` style="text-align:${token.align[i]}"` : '';
+				return `<th${align}>${this.parser.parseInline(cell.tokens)}</th>`;
+			}).join('');
+
+			const body = token.rows.map((row) => {
+				const cells = row.map((cell, i) => {
+					const align = token.align[i] ? ` style="text-align:${token.align[i]}"` : '';
+					return `<td${align}>${this.parser.parseInline(cell.tokens)}</td>`;
+				}).join('');
+				return `<tr>${cells}</tr>`;
+			}).join('');
+
+			return `<div class="table-scroll"><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+		}
+	}
+});
+
+// Called from Swift with the document text as an argument, never interpolated into this
+// file, so the content cannot break out of its string context.
+function renderMarkdown(source) {
+	document.getElementById('content').innerHTML = marked.parse(String(source));
+	return document.body.scrollHeight;
+}
+</script>
+</body>
+</html>

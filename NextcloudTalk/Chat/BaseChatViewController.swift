@@ -4313,6 +4313,20 @@ import Toast
                 return
             }
 
+            // Use MarkdownViewerViewController for markdown. QuickLook has no markdown renderer —
+            // the `.md` UTI conforms to `public.plain-text`, so it would show the raw source, which
+            // is what the web and desktop clients render properly.
+            if MarkdownViewerViewController.supportedFileExtensions.contains(fileExtension),
+               let markdownViewController = MarkdownViewerViewController(fileURL: URL(fileURLWithPath: fileLocalPath)) {
+                let navigationController = UINavigationController(rootViewController: markdownViewController)
+                NCAppBranding.styleViewController(markdownViewController)
+
+                self.present(navigationController, animated: true)
+                self.isPreviewControllerShown = false
+
+                return
+            }
+
             // Use PKAddPassesViewController for Apple Wallet passes
             if fileExtension == "pkpass" {
                 if let passData = try? Data(contentsOf: URL(fileURLWithPath: fileLocalPath)),
