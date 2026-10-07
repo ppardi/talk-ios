@@ -87,6 +87,15 @@ class MessageBodyTextView: UITextView, UITextViewDelegate, UIGestureRecognizerDe
         commonInit()
     }
 
+    /// Remote markdown images are left pending by the parser, which runs on the main thread. They are
+    /// fetched here instead, when the text is about to be shown.
+    override var attributedText: NSAttributedString! {
+        didSet {
+            MarkdownImageLoader.shared.loadPendingImages(in: self.attributedText,
+                                                         maxWidth: MarkdownImageFormatter.preferredMaxWidth)
+        }
+    }
+
     override var intrinsicContentSize: CGSize {
         let superSize = super.intrinsicContentSize
 
@@ -196,12 +205,46 @@ class MessageBodyTextView: UITextView, UITextViewDelegate, UIGestureRecognizerDe
             return false
         }
 
+        // An image opens in the markdown viewer, which draws it full width and, being a web view,
+        // animates it — which an inline text attachment cannot do.
+        if URL.scheme == MarkdownImageFormatter.tapURLScheme {
+            if let source = textView.attributedText?.attribute(MarkdownImageFormatter.imageAttribute,
+                                                               at: characterRange.location,
+                                                               effectiveRange: nil) as? String {
+                self.presentImage(withSource: source)
+            }
+
+            return false
+        }
+
         if NCUtils.isInstanceRoomLink(link: URL.absoluteString) {
             NCRoomsManager.shared.startChat(withRoomToken: URL.lastPathComponent)
             return false
         }
 
         return true
+    }
+
+    /// Tapping the attachment itself. The `.link` on the same range usually routes the tap through
+    /// the URL method above, but an attachment is offered here first, so both paths are handled.
+    func textView(_ textView: UITextView, shouldInteractWith textAttachment: NSTextAttachment,
+                  in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
+        guard let attachment = textAttachment as? MarkdownImageAttachment else { return true }
+
+        self.presentImage(withSource: attachment.source)
+
+        return false
+    }
+
+    /// The source is handed over as markdown rather than interpolated into the viewer's HTML, and it
+    /// has already been matched against a pattern that admits no whitespace or closing parenthesis,
+    /// so it cannot break out of the image syntax.
+    private func presentImage(withSource source: String) {
+        let title = NSLocalizedString("Image", comment: "Title of the viewer showing an image from a message")
+        let viewController = MarkdownViewerViewController(markdown: "![](\(source))", title: title)
+        let navigationController = UINavigationController(rootViewController: viewController)
+
+        NCUserInterfaceController.sharedInstance().mainViewController.present(navigationController, animated: true)
     }
 
     func textViewDidChangeSelection(_ textView: UITextView) {

@@ -215,6 +215,7 @@ import Toast
 
         NotificationCenter.default.addObserver(self, selector: #selector(willShowKeyboard(notification:)), name: UIWindow.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(willHideKeyboard(notification:)), name: UIWindow.keyboardWillHideNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(markdownImageDidLoad(notification:)), name: MarkdownImageAttachment.didLoadNotification, object: nil)
 
         AllocationTracker.shared.addAllocation("ChatViewController")
     }
@@ -660,6 +661,39 @@ import Toast
                 }
             }
         }
+    }
+
+    // MARK: - Markdown images
+
+    /// A remote markdown image has been drawn into its attachment. The attachment is filled in place,
+    /// so the message's parsed string is still correct — but the height measured for it is not, and
+    /// `getCellHeight` serves that from `messageHeightCache`. Dropping the cached height is what
+    /// makes the row grow to fit the image; reloading alone would re-use the stale one.
+    @objc func markdownImageDidLoad(notification: Notification) {
+        guard let attachment = notification.object as? MarkdownImageAttachment,
+              let tableView = self.tableView,
+              let visibleIndexPaths = tableView.indexPathsForVisibleRows
+        else { return }
+
+        var reloadIndexPaths: [IndexPath] = []
+
+        // Only the visible rows: an off-screen row has no cached height worth correcting now, and it
+        // is measured fresh when it scrolls in.
+        for indexPath in visibleIndexPaths {
+            guard let message = self.message(for: indexPath),
+                  let parsed = message.parsedMarkdownForChat(),
+                  parsed.containsAttachment(attachment)
+            else { continue }
+
+            self.messageHeightCache.removeHeight(forMessage: message)
+            reloadIndexPaths.append(indexPath)
+        }
+
+        guard !reloadIndexPaths.isEmpty else { return }
+
+        tableView.beginUpdates()
+        tableView.reloadRows(at: reloadIndexPaths, with: .none)
+        tableView.endUpdates()
     }
 
     // MARK: - Message updates

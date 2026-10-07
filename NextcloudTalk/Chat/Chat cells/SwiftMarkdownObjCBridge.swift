@@ -58,9 +58,28 @@ import UIKit
     }
 
     static func parseMarkdown(markdownString: NSAttributedString) -> NSMutableAttributedString {
+        return parseMarkdown(markdownString: markdownString, renderImages: false)
+    }
+
+    /// - Parameter renderImages: draw markdown images inline. Only the chat bubbles pass true.
+    ///   `NCChatMessage.parsedMarkdown`, which feeds the conversation list, is not cached and
+    ///   re-parses on every draw, and `NCChatTitleView` renders a single truncated line — neither is
+    ///   somewhere to be decoding images.
+    static func parseMarkdown(markdownString: NSAttributedString,
+                              renderImages: Bool) -> NSMutableAttributedString {
+        var source: NSAttributedString = markdownString
+
+        if renderImages {
+            // Before the table pass: a table's grid is rebuilt as plain text, which would drop an
+            // attachment sitting inside a cell. The image attributes are carried on the text itself,
+            // so the ranges do not have to survive what the table pass does to the string.
+            (source, _) = MarkdownImageFormatter.substituting(in: markdownString,
+                                                              maxWidth: MarkdownImageFormatter.preferredMaxWidth)
+        }
+
         // CDMarkdownKit has no table element, so tables would otherwise reach the user as raw pipes.
         // Substitute them for an aligned monospaced block first.
-        let (substituted, tableRanges) = MarkdownTableFormatter.substituting(in: markdownString,
+        let (substituted, tableRanges) = MarkdownTableFormatter.substituting(in: source,
                                                                             maxCharactersPerLine: maxCharactersPerLine)
 
         // The font is applied *before* parsing, not after: CDMarkdownKit strips syntax characters as

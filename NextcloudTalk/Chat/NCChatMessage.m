@@ -433,7 +433,7 @@ NSString * const kSharedItemTypePinned      = @"pinned";
         return parsedMessage;
     }
 
-    _parsedMarkdownForChat = [SwiftMarkdownObjCBridge parseMarkdownWithMarkdownString:parsedMessage];
+    _parsedMarkdownForChat = [SwiftMarkdownObjCBridge parseMarkdownWithMarkdownString:parsedMessage renderImages:YES];
 
     return _parsedMarkdownForChat;
 }
