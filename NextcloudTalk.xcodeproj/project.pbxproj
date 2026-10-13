@@ -837,6 +837,7 @@
 				Extensions/UIFontExtension.swift,
 				Extensions/UIImageExtension.swift,
 				Extensions/UITableViewExtension.swift,
+				FederatedPresenceTint.swift,
 				PlaceholderView.swift,
 				PlaceholderView.xib,
 			);

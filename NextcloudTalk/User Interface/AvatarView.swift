@@ -183,7 +183,11 @@ import SDWebImage
         }
 
         if participant.isFederated {
-            if let statusImage = statusImageWith(name: "globe", color: .label, padding: 3) {
+            // Overwrites the badge set just above on purpose: the globe has to win the corner,
+            // because "this person is on another server" outranks their status and there is only
+            // one mark. The status is not lost, it moves into the globe's colour.
+            let tint = FederatedPresenceTint.color(forStatus: participant.status)
+            if let statusImage = statusImageWith(name: "globe", color: tint, padding: 3) {
                 setUserStatusImage(statusImage)
             }
         }
