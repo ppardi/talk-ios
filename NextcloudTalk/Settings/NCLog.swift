@@ -21,12 +21,24 @@
         return dateFormatter
     }()
 
-    private static var logfilePath: URL? = {
-        guard let documentDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-        else { return nil }
+    /// Which process wrote a line. The app and its extensions share one logfile, and an extension's
+    /// lines are the only record of what happened while the app was not running, so each line has
+    /// to say where it came from.
+    private static let processTag = ProcessInfo.processInfo.processName
 
+    private static var logfilePath: URL? = {
         let fileManager = FileManager.default
-        let logDir = documentDir.appendingPathComponent("logs")
+
+        // The notification extension is a separate process with its own container, so writing to
+        // the per-process Documents directory put its lines in a file the app could never show —
+        // which is why a push that only ever woke the extension appeared to leave no trace at all.
+        // The shared app group container is the one place both can write and the app can read.
+        let baseDir = fileManager.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
+            ?? fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+
+        guard let baseDir else { return nil }
+
+        let logDir = baseDir.appendingPathComponent("logs")
         let logPath = logDir.path
 
         // Allow writing to files while the app is in the background
@@ -48,14 +60,19 @@
                 let now = Date()
 
                 var logMessage = "\(logLineDateFormatter.string(from: now)) "
-                logMessage += "(\(currentQueueName)): \(message)\n"
+                logMessage += "[\(processTag)] (\(currentQueueName)): \(message)\n"
 
                 let dateString = fileNameDateFormatter.string(from: now)
                 let logFileName = "debug-\(dateString).log"
                 let fullPath = logfilePath.appendingPathComponent(logFileName).path
 
-                if let fileHandle = FileHandle(forWritingAtPath: fullPath) {
-                    fileHandle.seekToEndOfFile()
+                // The app and its extensions append to the same file from different processes, so
+                // open with O_APPEND: seeking to the end and then writing would let one process
+                // overwrite the other's line.
+                let descriptor = open(fullPath, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+
+                if descriptor >= 0 {
+                    let fileHandle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
                     // UTF-8 will never be nil
                     try fileHandle.write(contentsOf: logMessage.data(using: .utf8)!)
                     try fileHandle.close()
