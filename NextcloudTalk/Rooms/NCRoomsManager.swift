@@ -344,6 +344,10 @@ class NCRoomsManager: NSObject, CallViewControllerDelegate {
                 managedRoom.lastActivity = lastMessage.timestamp
             }
         }
+
+        // The badge is derived from what the conversations say is unread, so reading one has to
+        // bring it down right away rather than waiting for the next sync.
+        NCNotificationController.sharedInstance().updateAppIconBadgeNumber()
     }
 
     public func deleteRoom(withConfirmation room: NCRoom, withStartedBlock startedBlock: (() -> Void)? = nil, withFinishedBlock finishedBlock: ((_ success: Bool) -> Void)? = nil) {

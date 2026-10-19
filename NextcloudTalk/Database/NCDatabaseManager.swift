@@ -357,6 +357,75 @@ public extension Notification.Name {
         return unreadNotifications
     }
 
+    /// The number of unread messages this account should show on the app icon badge, derived from
+    /// the synced conversation state.
+    ///
+    /// `TalkAccount.unreadBadgeNumber` counts notifications the extension has handled, and is only
+    /// ever incremented by a push or reset wholesale when the app becomes active, when a banner is
+    /// presented in the foreground, or when the server withdraws a notification. Nothing restores a
+    /// count that was cleared while messages were still unread, so a badge lost that way stayed
+    /// lost. This is recomputed from the conversations every time, so it corrects itself on the
+    /// next sync.
+    public func numberOfUnreadMessages(forAccountId accountId: String) -> Int {
+        RLMRealm.default().refresh()
+
+        let query = NSPredicate(format: "accountId = %@", accountId)
+        var unreadMessages = 0
+
+        for case let room as NCRoom in NCRoom.objects(with: query) {
+            unreadMessages += self.badgeContribution(of: room)
+        }
+
+        return unreadMessages
+    }
+
+    /// The number of unread messages across every account, for the app icon badge.
+    public func numberOfUnreadMessages() -> Int {
+        RLMRealm.default().refresh()
+
+        var unreadMessages = 0
+
+        for case let account as TalkAccount in TalkAccount.allObjects() {
+            unreadMessages += self.numberOfUnreadMessages(forAccountId: account.accountId)
+        }
+
+        return unreadMessages
+    }
+
+    /// The number to show on the app icon badge.
+    ///
+    /// Neither source is complete on its own. The notification tally knows about pushes that
+    /// arrived since the conversation list was last fetched, but is reset whenever the app becomes
+    /// active. The conversations know what is genuinely unread, but only as of the last sync. The
+    /// larger of the two is therefore the best available answer; adding them would count a message
+    /// that is in both.
+    public func appIconBadgeNumber() -> Int {
+        return max(self.numberOfUnreadNotifications(), self.numberOfUnreadMessages())
+    }
+
+    /// How much a single conversation adds to the badge, honouring the notification level the user
+    /// chose for it: a muted or archived conversation never badges, and one set to mentions only
+    /// badges once mentioned.
+    private func badgeContribution(of room: NCRoom) -> Int {
+        guard !room.isArchived, room.unreadMessages > 0 else { return 0 }
+
+        switch room.notificationLevel {
+        case .never:
+            return 0
+        case .mention:
+            // `hasUnreadMention` treats every message in a one-to-one as directed at the user.
+            return room.hasUnreadMention ? room.unreadMessages : 0
+        case .always, .default:
+            // The server resolves the default level into always, mention or never before it sends
+            // the conversation, so a level still reported as default means we were not told. The
+            // server falls back to always there, and a badge too many costs less than a message
+            // missed, so badge it.
+            return room.unreadMessages
+        @unknown default:
+            return room.unreadMessages
+        }
+    }
+
     public func removeUnreadNotificationForInactiveAccounts() {
         RLMRealm.writeTransaction { _ in
             for case let account as TalkAccount in TalkAccount.allObjects() {

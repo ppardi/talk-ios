@@ -18,6 +18,28 @@ extension NSNotification.Name {
     public static let NCLocalNotificationJoinChat = Notification.Name.NCLocalNotificationJoinChat
 }
 
+///
+/// The slice of `UNUserNotificationCenter` that `NCNotificationController` uses.
+///
+/// `UNUserNotificationCenter.current()` talks to the real notification system, which a unit test
+/// can neither populate nor inspect. That is why the removal logic below went wrong unnoticed:
+/// there was no way to watch which notifications it removed. This protocol is the seam that lets
+/// a test see that.
+///
+protocol UserNotificationCenterProtocol: AnyObject {
+    var delegate: UNUserNotificationCenterDelegate? { get set }
+
+    func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping (Bool, Error?) -> Void)
+    func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: ((Error?) -> Void)?)
+    func getPendingNotificationRequests(completionHandler: @escaping ([UNNotificationRequest]) -> Void)
+    func getDeliveredNotifications(completionHandler: @escaping ([UNNotification]) -> Void)
+    func removePendingNotificationRequests(withIdentifiers identifiers: [String])
+    func removeDeliveredNotifications(withIdentifiers identifiers: [String])
+    func setBadgeCount(_ newBadgeCount: Int, withCompletionHandler completionHandler: ((Error?) -> Void)?)
+}
+
+extension UNUserNotificationCenter: UserNotificationCenterProtocol {}
+
 @objcMembers
 public class NCNotificationController: NSObject, UNUserNotificationCenterDelegate {
 
@@ -36,13 +58,22 @@ public class NCNotificationController: NSObject, UNUserNotificationCenterDelegat
     public static let actionFederationInvitationAccept = "ACCEPT_FEDERATION_INVITATION"
     public static let actionFederationInvitationReject = "REJECT_FEDERATION_INVITATION"
 
-    private let notificationCenter = UNUserNotificationCenter.current()
+    // Not private and not a `let`, so a test can substitute a notification center it can inspect.
+    @nonobjc internal var notificationCenter: UserNotificationCenterProtocol = UNUserNotificationCenter.current()
     private var serverNotificationsAttempts: [AnyHashable: Any] = [:] // notificationId -> get attempts
 
     override init() {
         super.init()
 
         self.notificationCenter.delegate = self
+
+        // A completed conversation sync is the only moment we know what is genuinely unread, so it
+        // is also the moment to correct a badge that an app activation or a foreground banner
+        // cleared while messages were still unread.
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(self.updateAppIconBadgeNumber),
+                                               name: .NCRoomsManagerDidUpdateRooms,
+                                               object: nil)
     }
 
     public func requestAuthorization() {
@@ -63,13 +94,16 @@ public class NCNotificationController: NSObject, UNUserNotificationCenterDelegat
 
         switch pushNotification.type {
         case .delete:
+            NCLog.log("Silent push withdraws notification \(pushNotification.notificationId)")
             self.removeNotification(withNotificationIds: [NSNumber(value: pushNotification.notificationId)], forAccountId: pushNotification.accountId, withCompletionBlock: nil)
         case .deleteAll:
+            NCLog.log("Silent push withdraws every notification for this account")
             self.removeAllNotifications(forAccountId: pushNotification.accountId)
         case .deleteMultiple:
+            NCLog.log("Silent push withdraws notifications \(pushNotification.notificationIds ?? [])")
             self.removeNotification(withNotificationIds: pushNotification.notificationIds as? [NSNumber], forAccountId: pushNotification.accountId, withCompletionBlock: nil)
         default:
-            NSLog("Push Notification of an unknown type received")
+            NCLog.log("Silent push of unhandled type \(pushNotification.type.rawValue)")
         }
     }
 
@@ -182,13 +216,15 @@ public class NCNotificationController: NSObject, UNUserNotificationCenterDelegat
         self.updateAppIconBadgeNumber()
     }
 
-    private func updateAppIconBadgeNumber() {
+    public func updateAppIconBadgeNumber() {
         DispatchQueue.main.async {
-            UIApplication.shared.applicationIconBadgeNumber = NCDatabaseManager.sharedInstance().numberOfUnreadNotifications()
+            self.notificationCenter.setBadgeCount(NCDatabaseManager.sharedInstance().appIconBadgeNumber(), withCompletionHandler: nil)
         }
     }
 
     public func removeAllNotifications(forAccountId accountId: String) {
+        NCLog.log("Removing all notifications for account \(accountId) and clearing its notification counter")
+
         // Check in pending notifications
         self.notificationCenter.getPendingNotificationRequests { requests in
             for notificationRequest in requests {
@@ -229,6 +265,9 @@ public class NCNotificationController: NSObject, UNUserNotificationCenterDelegat
             }
 
             if notificationIds.contains(NSNumber(value: notificationId)) {
+                // The moment a banner leaves the screen without the user having read it.
+                NCLog.log("Pulling \(isPending ? "pending" : "delivered") notification \(notificationId) off the screen")
+
                 if isPending {
                     self.notificationCenter.removePendingNotificationRequests(withIdentifiers: [notificationRequest.identifier])
                 } else {
@@ -362,11 +401,28 @@ public class NCNotificationController: NSObject, UNUserNotificationCenterDelegat
         NotificationCenter.default.post(name: .NCNotificationControllerWillPresent, object: self, userInfo: nil)
         completionHandler([.list, .banner])
 
-        // Remove the notification from Notification Center if it is from the active account
-        let notificationAccountId = notification.request.content.userInfo["accountId"] as? String
-        if let notificationAccountId, NCDatabaseManager.sharedInstance().activeAccount().accountId == notificationAccountId {
-            self.removeAllNotifications(forAccountId: notificationAccountId)
-        }
+        self.handlePresentedNotification(withUserInfo: notification.request.content.userInfo)
+    }
+
+    ///
+    /// Clears the one notification that was just shown as a foreground banner.
+    ///
+    /// The user has seen this one, so leaving it in Notification Center would duplicate it. Only
+    /// this one, though: a banner for one conversation says nothing about whether the others have
+    /// been read. This used to call `removeAllNotifications`, so a single banner arriving while the
+    /// app was open wiped every other conversation's entry out of Notification Center and reset the
+    /// account's whole notification tally.
+    ///
+    /// A notification carrying no id — a missed call, say — is left in place. Leaving one duplicate
+    /// on screen costs the user far less than removing notifications they have not seen.
+    ///
+    internal func handlePresentedNotification(withUserInfo userInfo: [AnyHashable: Any]) {
+        guard let accountId = userInfo["accountId"] as? String,
+              NCDatabaseManager.sharedInstance().activeAccount().accountId == accountId,
+              let notificationId = userInfo["notificationId"] as? NSNumber
+        else { return }
+
+        self.removeNotification(withNotificationIds: [notificationId], forAccountId: accountId, withCompletionBlock: nil)
     }
 
     public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {

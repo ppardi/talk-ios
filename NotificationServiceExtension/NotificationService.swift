@@ -63,8 +63,11 @@ class NotificationService: UNNotificationServiceExtension {
         self.bestAttemptContent?.title = ""
         self.bestAttemptContent?.body = NSLocalizedString("You received a new notification", comment: "")
 
+        NCLog.log("NSE: received a push notification")
+
         guard self.configureDatabase() else {
             // Without a working database, nothing left to do here
+            NCLog.log("NSE: no usable database, showing a generic notification without a badge")
             self.showBestAttemptNotification()
             return
         }
@@ -77,6 +80,7 @@ class NotificationService: UNNotificationServiceExtension {
 
         guard let message, let signature else {
             // Without a message or signature there's nothing left to do here
+            NCLog.log("NSE: push carried no subject or signature, showing a generic notification")
             self.showBestAttemptNotification()
             return
         }
@@ -99,6 +103,7 @@ class NotificationService: UNNotificationServiceExtension {
             // At this point we tried everything to decrypt the received message
             // No need to wait for the extension timeout, nothing is happening anymore
 
+            NCLog.log("NSE: could not decrypt the push for any of \(TalkAccount.allObjects().count) account(s), showing a generic notification")
             self.showBestAttemptNotification()
             return
         }
@@ -106,7 +111,9 @@ class NotificationService: UNNotificationServiceExtension {
         if pushNotification.type == .adminNotification {
             // Test notification send through "occ notification:test-push --talk <userid>"
             // No need to increase the badge or query the server about it
+            // Note this returns before any badge is set, so a test push never exercises that path.
 
+            NCLog.log("NSE: admin test notification, delivering without touching the badge")
             self.bestAttemptContent?.body = pushNotification.subject
             self.showBestAttemptNotification()
             return
@@ -123,13 +130,17 @@ class NotificationService: UNNotificationServiceExtension {
             }
         }
 
-        // Get the total number of unread notifications
-        let unreadNotifications = NCDatabaseManager.sharedInstance().numberOfUnreadNotifications()
+        // Get the number to show on the app icon. This takes the conversations into account as well
+        // as the notification counter, so a badge the app cleared while messages were still unread
+        // is restored by the next push rather than staying lost.
+        let badgeNumber = NCDatabaseManager.sharedInstance().appIconBadgeNumber()
 
         self.bestAttemptContent?.body = pushNotification.bodyForRemoteAlerts()
         self.bestAttemptContent?.threadIdentifier = pushNotification.roomToken
         self.bestAttemptContent?.sound = .default
-        self.bestAttemptContent?.badge = unreadNotifications as NSNumber
+        self.bestAttemptContent?.badge = badgeNumber as NSNumber
+
+        NCLog.log("NSE: type \(pushNotification.type.rawValue) for room \(pushNotification.roomToken ?? "?"), notification \(pushNotification.notificationId), badge \(badgeNumber)")
 
         if pushNotification.type == .chat {
             // Set category for chat messages to allow interactive notifications
@@ -154,6 +165,7 @@ class NotificationService: UNNotificationServiceExtension {
         NCAPIController.shared.getServerNotification(withId: pushNotification.notificationId, forAccount: account) { serverNotification, dataDict, error in
             guard let serverNotification, let dataDict, error == nil else {
                 // Even if the server request fails, we should try to create a conversation notifications
+                NCLog.log("NSE: could not fetch notification \(pushNotification.notificationId) from the server, delivering from the push payload alone")
                 self.createAndShowConversationNotification(withPushNotification: pushNotification)
                 return
             }
@@ -242,7 +254,12 @@ class NotificationService: UNNotificationServiceExtension {
     }
 
     private func showBestAttemptNotification() {
-        guard let bestAttemptContent = self.bestAttemptContent else { return }
+        guard let bestAttemptContent = self.bestAttemptContent else {
+            NCLog.log("NSE: nothing to deliver, no content was prepared")
+            return
+        }
+
+        NCLog.log("NSE: delivering notification with badge \(bestAttemptContent.badge?.description ?? "unset")")
 
         // When we have a send message intent, we use it, otherwise we fall back to the non-conversation-notification one
         if let sendMessageIntent = self.sendMessageIntent, let updatedContent = try? bestAttemptContent.updating(from: sendMessageIntent) {

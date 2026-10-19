@@ -272,20 +272,30 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
         // Called when a background notification is delivered.
+        NCLog.log("Received silent push (app state \(UIApplication.shared.applicationState.rawValue))")
+
         let message = userInfo["subject"] as? String
         let signature = userInfo["signature"] as? String
 
         guard let message, let signature else {
+            NCLog.log("Silent push had no subject or signature, ignoring it")
             return
         }
+
+        var decrypted = false
 
         for account in NCDatabaseManager.sharedInstance().allAccounts() {
             if let decryptedMessage = NCPushNotificationsUtils.decryptPushNotification(withMessageBase64: message, withSignatureBase64: signature, forAccount: account) {
                 let pushNotification = NCPushNotification(fromDecryptedString: decryptedMessage, withAccountId: account.accountId)
                 NCNotificationController.sharedInstance().processBackgroundPushNotification(pushNotification)
+                decrypted = true
 
                 break
             }
+        }
+
+        if !decrypted {
+            NCLog.log("Silent push could not be decrypted for any account")
         }
 
         // Check if the other notifications are still current and try to remove them otherwise
