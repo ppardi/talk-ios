@@ -577,11 +577,16 @@ import UIKit
 
     public func setChatMessage(_ chatMessage: String) {
         DispatchQueue.main.async {
+            let had = self.textView.text ?? ""
+            if had != chatMessage {
+                NCLog.log("PENDINGDIAG OVERWRITE: textView had \(had.count) chars ('\(had.suffix(30))') -> replacing with \(chatMessage.count) chars ('\(chatMessage.suffix(30))')")
+            }
             self.textView.text = chatMessage
         }
     }
 
     public func restorePendingMessage() {
+        NCLog.log("PENDINGDIAG restore: stored='\((self.room.pendingMessage ?? "").suffix(30))' textView=\((self.textView.text ?? "").count) chars, isFirstResponder=\(self.textView.isFirstResponder)")
         if let pendingMessage = self.room.pendingMessage {
             self.setChatMessage(pendingMessage)
         }

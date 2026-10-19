@@ -1568,6 +1568,7 @@ import Toast
         self.replyMessageView?.dismiss()
         self.mentionsDict.removeAll()
         self.editingMessage = nil
+        NCLog.log("PENDINGDIAG restore requested from didEndTextEditing")
         self.restorePendingMessage()
         self.stopTyping(force: true)
         self.updateInputbarButtonsForEditing()
@@ -3785,9 +3786,11 @@ import Toast
     public func savePendingMessage() {
         if self.textInputbar.isEditing {
             // We don't want to save a message that we are editing
+            NCLog.log("PENDINGDIAG save SKIPPED (isEditing) while textView holds \(self.textView.text.count) chars")
             return
         }
 
+        NCLog.log("PENDINGDIAG save: storing \(self.textView.text.count) chars: '\(self.textView.text.suffix(30))'")
         self.room.pendingMessage = self.textView.text
         NCRoomsManager.shared.updatePendingMessage(self.room.pendingMessage, forRoom: self.room)
     }
